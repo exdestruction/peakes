@@ -6,6 +6,8 @@ import scipy
 import matplotlib.pyplot as plt
 import numpy as np  
 
+CRYSTAL_CONST = 1.54059 / 2
+
 def main(args):
     filename = args.filename
     method = args.method
@@ -22,12 +24,21 @@ def main(args):
     if method == 'slow_2t-t':
         peaks = scipy.signal.find_peaks(y_log, height=height, threshold=threshold, distance=distance)
         idxs = peaks[0]
-        peaks_x = data.iloc[idxs, 0]
-        peaks_y_log = np.log10(data.iloc[idxs, 1])
+        peaks_x = data.iloc[idxs, 0].to_numpy()
+        peaks_y_log = np.log10(data.iloc[idxs, 1]).to_numpy()
+        
+        alphas = peaks_x /180 * np.pi
+        thickness = np.mean(CRYSTAL_CONST / (np.sin(alphas[1:]) - np.sin(alphas[:-1]))) / 10
 
     fig, ax = plt.subplots()
     ax.plot(x, y_log)
     ax.scatter(peaks_x, peaks_y_log, color='r')
+    ax.text(.05, .95, f'thickness={thickness:.5f} nm',
+        horizontalalignment='left',
+        verticalalignment='top',
+        transform=ax.transAxes)
+    ax.set_xlabel('2 tetta / deg', fontsize=12)
+    ax.set_ylabel('Intensity', fontsize=12)
     plt.show()
 
 
