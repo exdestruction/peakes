@@ -65,7 +65,7 @@ def als(y, lam=1e9, p=0.5, itermax=10):
 
 def draw_regression(NR, I):
     num_areas = NR.shape[1]
-    fig, axs = plt.subplots(num_areas)
+    fig, axs = plt.subplots(num_areas, constrained_layout=True)
     for i in range(num_areas):
         # this is to deal with plots, if only one metric/plot is present
         try:
@@ -77,12 +77,11 @@ def draw_regression(NR, I):
         a, b, r, p, std_err = scipy.stats.linregress(x, y)
         ax.scatter(x,y , color='red')
         ax.plot(x, a*x+b, label=f'y = {a:.5f} * x + {b:.5f}\nr^2={r**2:.5f}')
+        ax.set_title(f'Peak #{i}')
         ax.set_xlabel('NR')
         ax.set_ylabel('I')
         ax.legend()
         ax.grid()
-
-    # plt.show()
     return fig
 
 def main(args):
@@ -104,7 +103,10 @@ def main(args):
     y_log = np.log10(y)
 
     # applying baseline correction "asymmetric least square method"
-    y_res = als(y_log.to_numpy()) 
+    if method == 'rock':
+        y_res = als(y_log.to_numpy(), 1e6)
+    else:
+        y_res = als(y_log.to_numpy()) 
 
     # peaks of preprocessed data
     peaks_baselined = scipy.signal.find_peaks(y_res, prominence=prominence)
@@ -137,41 +139,48 @@ def main(args):
     # alpha = 2 tetta in rad
     alphas = peaks_x.to_numpy() / 180 * np.pi
 
-    if method == 'slow_2t-t':
-        thickness = np.mean(CRYSTAL_CONST / 2 / (np.sin(alphas[1:]) - np.sin(alphas[:-1]))) / 10
-    elif method == "2t-t":
-        half_alphas = np.reshape(alphas, (-1, number_of_peaks)) / 2
-        NR = 0.5 * np.power(np.cos(half_alphas), 2) / np.sin(half_alphas) + (np.power(np.cos(half_alphas), 2) / half_alphas)
-        proj_num = np.array(range(1, NR.shape[0]+1), ndmin=2).transpose()
-        I = CRYSTAL_CONST / (2 * np.sin(half_alphas)) * proj_num   
-
-        regress_fig = draw_regression(NR, I)
 
     fig, ax = plt.subplots()
     ax.plot(x, y_log)
     ax.plot(x, y_res)
     ax.scatter(peaks_x, peaks_y_log, color='r')
-    try:
+    ax.set_xlabel('2 tetta', fontsize=12) 
+    ax.set_ylabel('Intensity', fontsize=12)
+
+    if method == 'slow_2t-t':
+        thickness = np.mean(CRYSTAL_CONST / 2 / (np.sin(alphas[1:]) - np.sin(alphas[:-1]))) / 10
+        # plotting
         ax.text(.05, .95, f'thickness={thickness:.5f} nm',
             horizontalalignment='left',
             verticalalignment='top',
             transform=ax.transAxes)
-    except:
-        pass
-    ax.set_xlabel('2 tetta', fontsize=12)
-    ax.set_ylabel('Intensity', fontsize=12)
+
+    elif method == "2t-t":
+        half_alphas = np.reshape(alphas, (-1, number_of_peaks)) / 2
+        NR = 0.5 * np.power(np.cos(half_alphas), 2) / np.sin(half_alphas) + (np.power(np.cos(half_alphas), 2) / half_alphas)
+        proj_num = np.array(range(1, NR.shape[0]+1), ndmin=2).transpose()
+        I = CRYSTAL_CONST / (2 * np.sin(half_alphas)) * proj_num   
+        # plotting
+        regress_fig = draw_regression(NR, I)
+
+    elif method == "rock":
+        peak_y = data.loc[indexes_peaks_overall, 1].to_numpy()[0]
+        peak_yhalf = peak_y / 2
+        peak_yhalflog = np.log10(peak_yhalf)
+        # plotting
+        ax.text(.05, .95, f'FWHM={peak_yhalflog:.5f}',
+            horizontalalignment='left',
+            verticalalignment='top',
+            transform=ax.transAxes)
     plt.show()
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Function for finding peaks of XDR function')
     parser.add_argument('filename')
-    parser.add_argument('method')
-    # parser.add_argument("-he", '--height', default=2.5)
-    # parser.add_argument("-t", '--threshold', default=.1)
-    # parser.add_argument("-d", '--distance', default=100)
-    parser.add_argument("-p", "--prominence",type=int, default=0.5)
-    parser.add_argument("-np", "--number_of_peaks", type=int, default=3)
-    parser.add_argument("-w", "--width", type=int, default=200)
+    parser.add_argument('method', help="One of 3 methods: slow_2t-t, 2t-t, rock")
+    parser.add_argument("number_of_peaks", type=int, help='Number of peaks to be found on one area of interest')
+    parser.add_argument("-p", "--prominence",type=float, default=0.3, help="Defines how distinguishable important peaks should be. Default=0.3")
+    parser.add_argument("-w", "--width", type=int, default=200, help='Defines width of area of interest. Default=200 (points)')
     args = parser.parse_args()
     main(args)
 
