@@ -7,6 +7,8 @@ import pandas as pd
 import scipy
 import scipy.sparse
 import scipy.sparse.linalg
+import scipy.signal
+import scipy.stats
 import matplotlib.pyplot as plt
 import numpy as np  
 
