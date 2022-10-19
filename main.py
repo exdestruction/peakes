@@ -8,7 +8,8 @@ import scipy
 import matplotlib.pyplot as plt
 import numpy as np  
 
-CRYSTAL_CONST = 1.54059 / 2
+# 1.54059 is a wavelenght of X-ray in angstrems
+CRYSTAL_CONST = 1.54059 
 
 def als(y, lam=1e9, p=0.5, itermax=10):
     r"""
@@ -61,14 +62,35 @@ def als(y, lam=1e9, p=0.5, itermax=10):
         w = p * (y > z) + (1 - p) * (y < z)
     return z
 
+
+def draw_regression(NR, I):
+    num_areas = NR.shape[1]
+    fig, axs = plt.subplots(num_areas)
+    for i in range(num_areas):
+        # this is to deal with plots, if only one metric/plot is present
+        try:
+            ax = axs[i]
+        except TypeError:
+            ax = axs
+        x = NR[:, i]
+        y = I[:, i]
+        a, b, r, p, std_err = scipy.stats.linregress(x, y)
+        ax.scatter(x,y , color='red')
+        ax.plot(x, a*x+b, label=f'y = {a:.5f} * x + {b:.5f}\nr^2={r**2:.5f}')
+        ax.set_xlabel('NR')
+        ax.set_ylabel('I')
+        ax.legend()
+        ax.grid()
+
+    # plt.show()
+    return fig
+
 def main(args):
     filename = args.filename
     method = args.method
-    height = args.height
-    threshold = args.threshold
-    distance = args.distance
     prominence = args.prominence
     number_of_peaks = args.number_of_peaks
+    width_region = args.width 
 
     # get data from file provided through command line 
     with open(filename, 'r') as f:
@@ -76,6 +98,7 @@ def main(args):
 
     # drop rows, where any values == 0 
     data = data[~(data == 0).any(axis=1)]
+    # x is 2 tetta
     x = data.iloc[:,0]
     y = data.iloc[:,1]
     y_log = np.log10(y)
@@ -84,21 +107,20 @@ def main(args):
     y_res = als(y_log.to_numpy()) 
 
     # peaks of preprocessed data
-    area_of_interest_peak = scipy.signal.find_peaks(y_res, prominence=prominence)
-    area_of_interest_peak_idxs = area_of_interest_peak[0]
+    peaks_baselined = scipy.signal.find_peaks(y_res, prominence=prominence)
+    peaks_baselined_idxs = peaks_baselined[0]
 
     indexes_peaks_overall = []
-    number_of_points_around = 150
-    single_area_peaks = [] 
-    for idx in area_of_interest_peak_idxs:
-        area_around_peak = y_log.iloc[idx - number_of_points_around:idx + number_of_points_around]
-        most_sig_peaks = scipy.signal.find_peaks(area_around_peak)
-        most_sig_peaks_idx = most_sig_peaks[0]
-        peaks_data = area_around_peak.iloc[most_sig_peaks_idx]
-        prominence = scipy.signal.peak_prominences(area_around_peak, most_sig_peaks[0])
+    for idx in peaks_baselined_idxs:
+        area_around = y_log.iloc[idx - width_region:idx + width_region]
+        area_peaks = scipy.signal.find_peaks(area_around)
+        area_peaks_idx = area_peaks[0]
+        peaks_data = area_around.iloc[area_peaks_idx]
+        prominence = scipy.signal.peak_prominences(area_around, area_peaks[0])
 
         # pandas.Series to pandas.DataFrame to be able to acces indexes
         peaks_data = peaks_data.to_frame()
+        # add column with prominence
         peaks_data['prominence'] = prominence[0]
 
         # number_of_peaks of most significant peaks
@@ -106,41 +128,37 @@ def main(args):
         peaks_single_area = peaks_data_sorted.tail(number_of_peaks)
 
         idxs_peaks_single_area = np.sort(peaks_single_area.index.to_numpy())
-        # single_area['start_idx'] = area_around_peak.index.to_numpy()[0]
         single_area_peaks = idxs_peaks_single_area.tolist()
         indexes_peaks_overall += single_area_peaks
-        # print(peaks_single_area.loc[idxs_peaks_single_area]
-        # single_area = {}
-        # print(idxs_peaks_single_area)
-    # raise
-    # peaks_x = data.iloc[idxs, 0]
-    # peaks_idxs = [elem for elem in indexes_peaks_overall]
-    # print(peaks_idxs)
-    # # raise
-    # # flatten list of lists
-    # peaks_idxs = list(itertools.chain.from_iterable(peaks_idxs))
-    # print(peaks_idxs)
 
-    # raise
     peaks_x = data.loc[indexes_peaks_overall, 0]
-    # print(peaks_x)
     peaks_y_log = y_log.loc[indexes_peaks_overall]
-    alphas = peaks_x /180 * np.pi
+
+    # alpha = 2 tetta in rad
+    alphas = peaks_x.to_numpy() / 180 * np.pi
 
     if method == 'slow_2t-t':
-        thickness = np.mean(CRYSTAL_CONST / (np.sin(alphas[1:]) - np.sin(alphas[:-1]))) / 10
+        thickness = np.mean(CRYSTAL_CONST / 2 / (np.sin(alphas[1:]) - np.sin(alphas[:-1]))) / 10
     elif method == "2t-t":
-        thickness = CRYSTAL_CONST
+        half_alphas = np.reshape(alphas, (-1, number_of_peaks)) / 2
+        NR = 0.5 * np.power(np.cos(half_alphas), 2) / np.sin(half_alphas) + (np.power(np.cos(half_alphas), 2) / half_alphas)
+        proj_num = np.array(range(1, NR.shape[0]+1), ndmin=2).transpose()
+        I = CRYSTAL_CONST / (2 * np.sin(half_alphas)) * proj_num   
+
+        regress_fig = draw_regression(NR, I)
 
     fig, ax = plt.subplots()
     ax.plot(x, y_log)
     ax.plot(x, y_res)
     ax.scatter(peaks_x, peaks_y_log, color='r')
-    ax.text(.05, .95, f'thickness={thickness:.5f} nm',
-        horizontalalignment='left',
-        verticalalignment='top',
-        transform=ax.transAxes)
-    ax.set_xlabel('2 tetta / deg', fontsize=12)
+    try:
+        ax.text(.05, .95, f'thickness={thickness:.5f} nm',
+            horizontalalignment='left',
+            verticalalignment='top',
+            transform=ax.transAxes)
+    except:
+        pass
+    ax.set_xlabel('2 tetta', fontsize=12)
     ax.set_ylabel('Intensity', fontsize=12)
     plt.show()
 
@@ -148,11 +166,12 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Function for finding peaks of XDR function')
     parser.add_argument('filename')
     parser.add_argument('method')
-    parser.add_argument("-he", '--height', default=2.5)
-    parser.add_argument("-t", '--threshold', default=.1)
-    parser.add_argument("-d", '--distance', default=100)
+    # parser.add_argument("-he", '--height', default=2.5)
+    # parser.add_argument("-t", '--threshold', default=.1)
+    # parser.add_argument("-d", '--distance', default=100)
     parser.add_argument("-p", "--prominence",type=int, default=0.5)
     parser.add_argument("-np", "--number_of_peaks", type=int, default=3)
+    parser.add_argument("-w", "--width", type=int, default=200)
     args = parser.parse_args()
     main(args)
 
