@@ -5,6 +5,7 @@ import itertools
 
 import pandas as pd
 import scipy
+import scipy.sparse
 import matplotlib.pyplot as plt
 import numpy as np  
 
