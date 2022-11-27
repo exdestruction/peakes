@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+import os
+from enum import Enum
+from typing import NamedTuple
+import datetime
 
 import pandas as pd
 import scipy
@@ -14,21 +18,44 @@ from utils import als, draw_regression, parse_cli_args
 # 1.54059 is a wavelenght of X-ray in angstrems
 CRYSTAL_CONST = 1.54059 
 
+methods = Enum('methods', ['slow', '2t', 'rock'])
+
+class Data(NamedTuple):
+    name: str
+    path: str
+    method: str
+
 class XDR:
     def __init__(self, args):
-        self.filename = args.filename
-        self.method = args.method
+        # self.filename = args.filename
+        # self.method = args.method
         self.prominence = args.prominence
         self.number_of_peaks = args.number_of_peaks
-        if self.method == 'slow_2t-t':
-            self.number_of_peaks = 2
-        if self.method == 'rock':
-            self.number_of_peaks = 1
-        self.width_region = args.width 
+        # if self.method == 'slow_2t-t':
+            # self.number_of_peaks = 2
+        # if self.method == 'rock':
+            # self.number_of_peaks = 1
+        self.width_region = args.width
+        self.data = self.load_data('data')
+        for data in self.data:
+            print(data)
+        raise
 
+    def load_data(self, path):
+        def parse_method(name):
+            for method in methods:
+                if method.name in name:
+                    return method.name
 
-    def compute_all(self):
-        # files = self.load_data()
+        data = []
+        for entry in os.scandir(path):
+            if entry.is_dir():
+                data += self.load_data(entry.path) 
+            elif entry.is_file():
+                data.append(Data(name=entry.name, path=entry.path, method=parse_method(entry.name)))
+        return data
+
+    def compute(self):
         self.x, self.y = self.prepare_data(self.filename)
         self.y_log = np.log10(self.y)
 
@@ -119,9 +146,7 @@ class XDR:
                 transform=ax.transAxes)
         return fig, ax
 
-    def load_data(self):
-        # get all the data from ./data
-        pass
+    
 
     @staticmethod
     def prepare_data(filename):
@@ -180,6 +205,6 @@ class XDR:
 if __name__ == '__main__':
     args = parse_cli_args()
     xdr = XDR(args)
-    xdr.compute_all()
+    xdr.compute()
 
 
