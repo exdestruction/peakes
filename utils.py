@@ -53,17 +53,3 @@ def als(y, lam=1e9, p=0.5, itermax=10):
         z = scipy.sparse.linalg.spsolve(Z, w * y)
         w = p * (y > z) + (1 - p) * (y < z)
     return z
-
-
-
-
-
-def parse_cli_args():
-    parser = argparse.ArgumentParser(description='Function for finding peaks of XDR function')
-    # parser.add_argument('filename')
-    # parser.add_argument('method', help="One of 3 methods: slow_2t-t, 2t-t, rock")
-    # parser.add_argument("number_of_peaks", type=int, help='Number of peaks to be found on one area of interest')
-    # parser.add_argument("-p", "--prominence",type=float, default=0.3, help="Defines how distinguishable important peaks should be. Default=0.3")
-    # parser.add_argument("-w", "--width", type=int, default=200, help='Defines width of area of interest. Default=200 (points)')
-    args = parser.parse_args()
-    return args
