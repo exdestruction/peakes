@@ -63,13 +63,14 @@ class XDR:
 
     def report(self):
         for data in self.data:
+            self.number_of_peaks = data.peaks
             fig = self.compute(data)
             try:
                 fig.savefig(f'results/{self.timestamp}/{data.name[:-4]}.png')
             except FileNotFoundError as e:
                 os.mkdir(f'results/{self.timestamp}')
                 fig.savefig(f'results/{self.timestamp}/{data.name[:-4]}.png')
-            raise
+            # raise
 
     def compute(self, data):
         self.x, self.y = self.prepare_data(data.path)
@@ -81,7 +82,7 @@ class XDR:
                 self.y_log, 
                 peaks_idxs, 
                 width_region = self.width_region,
-                number_of_peaks=data.peaks
+                number_of_peaks=self.number_of_peaks
                 )
 
         self.peaks_x = self.x.loc[self.peaks_idxs]
@@ -98,16 +99,16 @@ class XDR:
             return fig
             
         elif data.method == '2t':
-            fig, axs = plt.subplots(1, 4, figsize=(8,8))
+            fig, axs = plt.subplots(2, 3, figsize=(15,10))
             self.plot_data(axs[0])
             # plotting
             self.draw_regression(axs[1:])
             return fig
 
         elif data.method == "rock":
-            fig, axs = plt.subplots(1, 1, figsize=(10,10))
-            self.plot_data(axs[0]) 
-            self.plot_rock(axs[0])
+            fig, axs = plt.subplots(1, 1, figsize=(5,5))
+            self.plot_data(axs) 
+            self.plot_rock(axs)
             return fig
 
 
