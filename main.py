@@ -13,104 +13,142 @@ import scipy.stats
 import matplotlib.pyplot as plt
 import numpy as np  
 
-from utils import als, draw_regression, parse_cli_args
+from utils import als
 
 # 1.54059 is a wavelenght of X-ray in angstrems
 CRYSTAL_CONST = 1.54059 
+WIDTH = 200
+PROMINANCE = 0.3
 
 methods = Enum('methods', ['slow', '2t', 'rock'])
+
 
 class Data(NamedTuple):
     name: str
     path: str
     method: str
+    peaks: int
 
 class XDR:
-    def __init__(self, args):
-        # self.filename = args.filename
-        # self.method = args.method
-        self.prominence = args.prominence
-        self.number_of_peaks = args.number_of_peaks
-        # if self.method == 'slow_2t-t':
-            # self.number_of_peaks = 2
-        # if self.method == 'rock':
-            # self.number_of_peaks = 1
-        self.width_region = args.width
+    def __init__(self):
+        self.prominence = PROMINANCE 
+        self.width_region = WIDTH
+        self.timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+
         self.data = self.load_data('data')
-        for data in self.data:
-            print(data)
-        raise
 
     def load_data(self, path):
         def parse_method(name):
             for method in methods:
                 if method.name in name:
                     return method.name
+        def get_peaks(method):
+            if method == 'slow':
+                peaks = 2
+            if method == '2t':
+                peaks = 3
+            if method == 'rock':
+                peaks = 1
+            return peaks
 
         data = []
         for entry in os.scandir(path):
             if entry.is_dir():
                 data += self.load_data(entry.path) 
             elif entry.is_file():
-                data.append(Data(name=entry.name, path=entry.path, method=parse_method(entry.name)))
+                method = parse_method(entry.name)
+                peaks = get_peaks(method)
+                data.append(Data(name=entry.name, path=entry.path, method=method, peaks=peaks))
         return data
 
-    def compute(self):
-        self.x, self.y = self.prepare_data(self.filename)
+    def report(self):
+        for data in self.data:
+            fig = self.compute(data)
+            try:
+                fig.savefig(f'results/{self.timestamp}/{data.name[:-4]}.png')
+            except FileNotFoundError as e:
+                os.mkdir(f'results/{self.timestamp}')
+                fig.savefig(f'results/{self.timestamp}/{data.name[:-4]}.png')
+            raise
+
+    def compute(self, data):
+        self.x, self.y = self.prepare_data(data.path)
         self.y_log = np.log10(self.y)
 
-        y_corrected = self.apply_correction(self.y_log, self.method)
-        peaks_idxs = self.find_peaks_idxs(y_corrected, self.prominence)
+        self.y_corrected = self.apply_correction(self.y_log, data.method)
+        peaks_idxs = self.find_peaks_idxs(self.y_corrected, self.prominence)
         self.peaks_idxs = self.find_peaks_around_corrected(
                 self.y_log, 
                 peaks_idxs, 
                 width_region = self.width_region,
-                number_of_peaks=self.number_of_peaks
+                number_of_peaks=data.peaks
                 )
 
         self.peaks_x = self.x.loc[self.peaks_idxs]
         self.peaks_y_log = self.y_log.loc[self.peaks_idxs]
 
         # alpha = 2 tetta in rad
-        alphas = self.peaks_x.to_numpy() / 180 * np.pi
+        self.alphas = self.peaks_x.to_numpy() / 180 * np.pi
 
-        if self.method == 'slow_2t-t':
-            # fig_a, ax_a = self.plot_slow(self.x, self.y_log, self.peaks_x, self.peaks_y_log)
-            fig, ax = plt.subplots()
-            ax.plot(self.x, self.y_log)
-            ax.plot(self.x, y_corrected)
-            ax.scatter(self.peaks_x, self.peaks_y_log, color='r')
-            fig_b, ax_b = self.compute_second_thickness()
+        if data.method == "slow":
+            fig, axs = plt.subplots(1, 2, figsize=(10,5), constrained_layout=True)
+            fig.suptitle(f"{data.name}")
+            self.plot_data(axs[0])
+            self.plot_closer_area(axs[1])
+            return fig
             
-        elif self.method == "2t-t":
-            fig, ax = plt.subplots()
-            ax.plot(self.x, self.y_log)
-            ax.plot(self.x, y_corrected)
-            ax.scatter(self.peaks_x, self.peaks_y_log, color='r')
-
-            half_alphas = np.reshape(alphas, (-1, self.number_of_peaks)) / 2
-            NR = 0.5 * np.power(np.cos(half_alphas), 2) / np.sin(half_alphas) + (np.power(np.cos(half_alphas), 2) / half_alphas)
-            proj_num = np.array(range(1, NR.shape[0]+1), ndmin=2).transpose()
-            I = CRYSTAL_CONST / (2 * np.sin(half_alphas)) * proj_num   
+        elif data.method == '2t':
+            fig, axs = plt.subplots(1, 4, figsize=(8,8))
+            self.plot_data(axs[0])
             # plotting
-            regress_fig = draw_regression(NR, I)
+            self.draw_regression(axs[1:])
+            return fig
 
-        elif self.method == "rock":
-            fig, ax = plt.subplots()
-            ax.plot(self.x, self.y_log)
-            ax.plot(self.x, y_corrected)
-            ax.scatter(self.peaks_x, self.peaks_y_log, color='r')
+        elif data.method == "rock":
+            fig, axs = plt.subplots(1, 1, figsize=(10,10))
+            self.plot_data(axs[0]) 
+            self.plot_rock(axs[0])
+            return fig
 
-            peak_y = self.y.loc[peaks_idxs].to_numpy()[0]
-            peak_yhalf = peak_y / 2
-            peak_yhalflog = np.log10(peak_yhalf)
+
+    def plot_rock(self, ax):
+        peak_y = self.y.loc[self.peaks_idxs].to_numpy()[0]
+        peak_yhalf = peak_y / 2
+        peak_yhalflog = np.log10(peak_yhalf)
             # plotting
-            ax.text(.05, .95, f'FWHM={peak_yhalflog:.5f}',
+        ax.text(.05, .95, f'FWHM={peak_yhalflog:.5f}',
                 horizontalalignment='left',
                 verticalalignment='top',
                 transform=ax.transAxes)
 
-        plt.show()
+    def plot_data(self, ax):
+        ax.plot(self.x, self.y_log)
+        ax.plot(self.x, self.y_corrected)
+        ax.scatter(self.peaks_x, self.peaks_y_log, color = 'r')
+    
+    def draw_regression(self, axs):
+        half_alphas = np.reshape(self.alphas, (-1, self.number_of_peaks)) / 2
+        NR = 0.5 * np.power(np.cos(half_alphas), 2) / np.sin(half_alphas) + (np.power(np.cos(half_alphas), 2) / half_alphas)
+        proj_num = np.array(range(1, NR.shape[0]+1), ndmin=2).transpose()
+        I = CRYSTAL_CONST / (2 * np.sin(half_alphas)) * proj_num
+        num_areas = NR.shape[1]
+        # fig, axs = plt.subplots(num_areas, constrained_layout=True)
+        for i in range(num_areas):
+            # this is to deal with plots, if only one metric/plot is present
+            try:
+                ax = axs[i]
+            except TypeError:
+                ax = axs
+            x = NR[:, i]
+            y = I[:, i]
+            a, b, r, p, std_err = scipy.stats.linregress(x, y)
+            ax.scatter(x,y , color='red')
+            ax.plot(x, a*x+b, label=f'y = {a:.5f} * x + {b:.5f}\nr^2={r**2:.5f}')
+            ax.set_title(f'Peak #{i}')
+            ax.set_xlabel('NR')
+            ax.set_ylabel('I')
+            ax.legend()
+            ax.grid()
 
     @staticmethod
     def get_thickness(peaks_x):
@@ -121,7 +159,7 @@ class XDR:
         return thickness
 
 
-    def compute_second_thickness(self):
+    def plot_closer_area(self, ax):
         x = self.x.loc[self.peaks_idxs[0]:self.peaks_idxs[-1]]
         y_log = self.y_log.loc[self.peaks_idxs[0]:self.peaks_idxs[-1]]
         peaks = scipy.signal.find_peaks(y_log)
@@ -129,12 +167,10 @@ class XDR:
         peaks_x = pd.concat([x.iloc[peaks[0]], self.peaks_x])
         peaks_y = pd.concat([y_log.iloc[peaks[0]],self.peaks_y_log])
 
-        fig, ax = self.plot_slow(x, y_log, peaks_x, peaks_y)
-        return fig, ax
+        self.plot_slow(x, y_log, peaks_x, peaks_y, ax)
 
     @staticmethod
-    def plot_slow(x, y, peaks_x, peaks_y):
-        fig, ax = plt.subplots()
+    def plot_slow(x, y, peaks_x, peaks_y, ax):
         ax.plot(x, y)
         # ax.plot(self.x, y_corrected)
         ax.scatter(peaks_x, peaks_y, color='r')
@@ -144,7 +180,6 @@ class XDR:
                 horizontalalignment='left',
                 verticalalignment='top',
                 transform=ax.transAxes)
-        return fig, ax
 
     
 
@@ -203,8 +238,8 @@ class XDR:
         return indexes_peaks_overall
 
 if __name__ == '__main__':
-    args = parse_cli_args()
-    xdr = XDR(args)
-    xdr.compute()
+    # args = parse_cli_args()
+    xdr = XDR()
+    xdr.report()
 
 
