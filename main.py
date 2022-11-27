@@ -18,7 +18,7 @@ from utils import als
 # 1.54059 is a wavelenght of X-ray in angstrems
 CRYSTAL_CONST = 1.54059 
 WIDTH = 200
-PROMINANCE = 0.3
+PROMINENCE = 0.2
 
 methods = Enum('methods', ['slow', '2t', 'rock'])
 
@@ -31,7 +31,7 @@ class Data(NamedTuple):
 
 class XDR:
     def __init__(self):
-        self.prominence = PROMINANCE 
+        self.prominence = PROMINENCE 
         self.width_region = WIDTH
         self.timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
@@ -65,12 +65,14 @@ class XDR:
         for data in self.data:
             self.number_of_peaks = data.peaks
             fig = self.compute(data)
+            fig.suptitle(f"{data.name}")
+            save_path = f"results/{self.timestamp}/{data.name[:-4]}.png"
             try:
-                fig.savefig(f'results/{self.timestamp}/{data.name[:-4]}.png')
+                fig.savefig(save_path)
             except FileNotFoundError as e:
                 os.mkdir(f'results/{self.timestamp}')
-                fig.savefig(f'results/{self.timestamp}/{data.name[:-4]}.png')
-            # raise
+                fig.savefig(save_path)
+            print(f'SAVING: {save_path}')
 
     def compute(self, data):
         self.x, self.y = self.prepare_data(data.path)
@@ -92,17 +94,17 @@ class XDR:
         self.alphas = self.peaks_x.to_numpy() / 180 * np.pi
 
         if data.method == "slow":
-            fig, axs = plt.subplots(1, 2, figsize=(10,5), constrained_layout=True)
-            fig.suptitle(f"{data.name}")
+            fig, axs = plt.subplots(1, 2, figsize=(10,5), layout='tight')
+            # fig.suptitle(f"{data.name}")
             self.plot_data(axs[0])
             self.plot_closer_area(axs[1])
             return fig
             
         elif data.method == '2t':
-            fig, axs = plt.subplots(2, 3, figsize=(15,10))
-            self.plot_data(axs[0])
-            # plotting
-            self.draw_regression(axs[1:])
+            fig, axs = plt.subplot_mosaic([["first", "first", "first"],
+                                            ["left", "center", "right"]], figsize=(15,10), layout='tight')
+            self.plot_data(axs['first'])
+            self.draw_regression([axs['left'], axs['center'], axs['right']])
             return fig
 
         elif data.method == "rock":
@@ -133,7 +135,6 @@ class XDR:
         proj_num = np.array(range(1, NR.shape[0]+1), ndmin=2).transpose()
         I = CRYSTAL_CONST / (2 * np.sin(half_alphas)) * proj_num
         num_areas = NR.shape[1]
-        # fig, axs = plt.subplots(num_areas, constrained_layout=True)
         for i in range(num_areas):
             # this is to deal with plots, if only one metric/plot is present
             try:
