@@ -94,7 +94,7 @@ class XDR:
         self.alphas = self.peaks_x.to_numpy() / 180 * np.pi
 
         if data.method == "slow":
-            fig, axs = plt.subplots(1, 2, figsize=(10,5), layout='tight')
+            fig, axs = plt.subplots(1, 2, figsize=(10,5))
             # fig.suptitle(f"{data.name}")
             self.plot_data(axs[0])
             self.plot_closer_area(axs[1])
@@ -102,7 +102,7 @@ class XDR:
             
         elif data.method == '2t':
             fig, axs = plt.subplot_mosaic([["first", "first", "first"],
-                                            ["left", "center", "right"]], figsize=(15,10), layout='tight')
+                                            ["left", "center", "right"]], figsize=(15,10))
             self.plot_data(axs['first'])
             self.draw_regression([axs['left'], axs['center'], axs['right']])
             return fig
