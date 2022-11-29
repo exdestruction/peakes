@@ -19,6 +19,7 @@ from utils import als
 CRYSTAL_CONST = 1.54059 
 WIDTH = 200
 PROMINENCE = 0.2
+NUM_PEAKS_SLOW = 30
 
 methods = ['slow', '2t', 'rock']
 
@@ -70,7 +71,7 @@ class XDR:
             print(f'SAVING: {save_path}')
             try:
                 fig.savefig(save_path)
-            except FileNotFoundError as e:
+            except FileNotFoundError:
                 try:
                     os.mkdir('results')
                 except FileExistsError:
@@ -84,7 +85,7 @@ class XDR:
 
         self.y_corrected = self.apply_correction(self.y_log, data.method)
         peaks_idxs = self.find_peaks_idxs(self.y_corrected, self.prominence)
-        self.peaks_idxs = self.find_peaks_around_corrected(
+        self.peaks_idxs = self.find_peaks_around(
                 self.y_log, 
                 peaks_idxs, 
                 width_region = self.width_region,
@@ -98,12 +99,20 @@ class XDR:
         self.alphas = self.peaks_x.to_numpy() / 180 * np.pi
 
         if data.method == "slow":
-            # peaks = self.find_peaks_idxs(self.y_log)
-            # print(peaks)
-            # raise
-            fig, axs = plt.subplots(1, 2, figsize=(10,5))
-            # fig.suptitle(f"{data.name}")
+            fig, axs = plt.subplots(1, 2, figsize=(10,5), layout='tight')
             self.plot_data(axs[0])
+
+            # find 20 peaks and thickness
+            peaks = self.find_peaks_around(self.y_log, peaks_idxs, width_region=self.width_region*2, number_of_peaks=NUM_PEAKS_SLOW) 
+            x = self.x.loc[peaks]
+            y_log = self.y_log.loc[peaks]
+            thickness = self.get_thickness(x) 
+            axs[0].scatter(x, y_log, color='blue')
+            axs[0].text(.05, .95, f'thickness={thickness:.5f} nm',
+                horizontalalignment='left',
+                verticalalignment='top',
+                transform=axs[0].transAxes)
+
             self.plot_closer_area(axs[1])
             return fig
             
@@ -173,10 +182,8 @@ class XDR:
 
     @staticmethod
     def get_thickness(peaks_x):
-        # alpha = 2 tetta in rad
         alphas = peaks_x.to_numpy() / 180 * np.pi
         thickness = np.mean(CRYSTAL_CONST / 2 / (np.sin(alphas[1:]) - np.sin(alphas[:-1]))) / 10
-
         return thickness
 
 
@@ -198,19 +205,6 @@ class XDR:
                 verticalalignment='top',
                 transform=ax.transAxes)
 
-    @staticmethod
-    def plot_slow(x, y, peaks_x, peaks_y, ax):
-        ax.plot(x, y)
-        # ax.plot(self.x, y_corrected)
-        ax.scatter(peaks_x, peaks_y, color='r')
-        thickness = XDR.get_thickness(peaks_x)
-        # plotting
-        ax.text(.05, .95, f'thickness={thickness:.5f} nm',
-                horizontalalignment='left',
-                verticalalignment='top',
-                transform=ax.transAxes)
-
-    
 
     @staticmethod
     def prepare_data(filename):
@@ -243,9 +237,9 @@ class XDR:
         return peaks_idxs
     
     @staticmethod
-    def find_peaks_around_corrected(y_log, peaks_corrected, width_region=150, number_of_peaks=None):
+    def find_peaks_around(y_log, peaks, width_region=150, number_of_peaks=None):
         indexes_peaks_overall = []
-        for idx in peaks_corrected:
+        for idx in peaks:
             area_around = y_log.iloc[idx - width_region:idx + width_region]
             area_peaks = scipy.signal.find_peaks(area_around)
             peaks_data = area_around.iloc[area_peaks[0]]
