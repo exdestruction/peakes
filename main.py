@@ -20,7 +20,7 @@ CRYSTAL_CONST = 1.54059
 WIDTH = 200
 PROMINENCE = 0.2
 
-methods = Enum('methods', ['slow', '2t', 'rock'])
+methods = ['slow', '2t', 'rock']
 
 
 class Data(NamedTuple):
@@ -40,8 +40,8 @@ class XDR:
     def load_data(self, path):
         def parse_method(name):
             for method in methods:
-                if method.name in name:
-                    return method.name
+                if method in name:
+                    return method
         def get_peaks(method):
             if method == 'slow':
                 peaks = 2
@@ -67,15 +67,19 @@ class XDR:
             fig = self.compute(data)
             fig.suptitle(f"{data.name}")
             save_path = f"results/{self.timestamp}/{data.name[:-4]}.png"
+            print(f'SAVING: {save_path}')
             try:
                 fig.savefig(save_path)
             except FileNotFoundError as e:
+                try:
+                    os.mkdir('results')
+                except FileExistsError:
+                    pass
                 os.mkdir(f'results/{self.timestamp}')
                 fig.savefig(save_path)
-            print(f'SAVING: {save_path}')
 
     def compute(self, data):
-        self.x, self.y = self.prepare_data(data.path)
+        self.x, self.y, self.data = self.prepare_data(data.path)
         self.y_log = np.log10(self.y)
 
         self.y_corrected = self.apply_correction(self.y_log, data.method)
@@ -115,11 +119,23 @@ class XDR:
 
 
     def plot_rock(self, ax):
+        peak_x = self.x.loc[self.peaks_idxs].to_numpy()[0]
         peak_y = self.y.loc[self.peaks_idxs].to_numpy()[0]
         peak_yhalf = peak_y / 2
         peak_yhalflog = np.log10(peak_yhalf)
-            # plotting
-        ax.text(.05, .95, f'FWHM={peak_yhalflog:.5f}',
+        data = self.data.to_numpy()
+        # find 2 nearest points to yhalf
+        _, index = scipy.spatial.KDTree(data).query([peak_x, peak_yhalf], k=2)
+        points = data[index]
+        x_coords = points[:,0]
+        difference = abs(x_coords[:-1] - x_coords[1:])
+    
+        # plotting
+        ax.text(.10, .85, f'FWHM={float(difference):<5f}',
+                horizontalalignment='left',
+                verticalalignment='top',
+                transform=ax.transAxes)
+        ax.text(.10, .95, f'HM={peak_yhalflog:.5f}',
                 horizontalalignment='left',
                 verticalalignment='top',
                 transform=ax.transAxes)
@@ -197,7 +213,7 @@ class XDR:
         x = data.iloc[:,0]
         y = data.iloc[:,1]
 
-        return x, y
+        return x, y, data
 
     @staticmethod 
     def apply_correction(y_log, method):
