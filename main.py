@@ -98,6 +98,9 @@ class XDR:
         self.alphas = self.peaks_x.to_numpy() / 180 * np.pi
 
         if data.method == "slow":
+            # peaks = self.find_peaks_idxs(self.y_log)
+            # print(peaks)
+            # raise
             fig, axs = plt.subplots(1, 2, figsize=(10,5))
             # fig.suptitle(f"{data.name}")
             self.plot_data(axs[0])
@@ -182,10 +185,18 @@ class XDR:
         y_log = self.y_log.loc[self.peaks_idxs[0]:self.peaks_idxs[-1]]
         peaks = scipy.signal.find_peaks(y_log)
 
-        peaks_x = pd.concat([x.iloc[peaks[0]], self.peaks_x])
-        peaks_y = pd.concat([y_log.iloc[peaks[0]],self.peaks_y_log])
+        peaks_x = x.iloc[peaks[0]]
+        peaks_y = y_log.iloc[peaks[0]]
 
-        self.plot_slow(x, y_log, peaks_x, peaks_y, ax)
+        thickness = XDR.get_thickness(peaks_x)
+
+        # plotting
+        ax.plot(x, y_log)
+        ax.scatter(peaks_x, peaks_y, color='r')
+        ax.text(.05, .95, f'thickness={thickness:.5f} nm',
+                horizontalalignment='left',
+                verticalalignment='top',
+                transform=ax.transAxes)
 
     @staticmethod
     def plot_slow(x, y, peaks_x, peaks_y, ax):
@@ -226,7 +237,7 @@ class XDR:
         return y_res
 
     @staticmethod
-    def find_peaks_idxs(y, prominence):
+    def find_peaks_idxs(y, prominence=0):
         peaks = scipy.signal.find_peaks(y, prominence=prominence)
         peaks_idxs = peaks[0]
         return peaks_idxs
