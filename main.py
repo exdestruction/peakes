@@ -18,8 +18,8 @@ from utils import als
 # 1.54059 is a wavelenght of X-ray in angstrems
 CRYSTAL_CONST = 1.54059 
 WIDTH = 200
-PROMINENCE = 0.2
-NUM_PEAKS_SLOW = 30
+PROMINENCE = 0.1
+NUM_PEAKS_SLOW = 40
 
 methods = ['slow', '2t', 'rock']
 
@@ -84,16 +84,16 @@ class XDR:
         self.y_log = np.log10(self.y)
 
         self.y_corrected = self.apply_correction(self.y_log, data.method)
-        peaks_idxs = self.find_peaks_idxs(self.y_corrected, self.prominence)
-        self.peaks_idxs = self.find_peaks_around(
+        peaks_corrected_idxs = self.find_peaks_idxs(self.y_corrected, self.prominence)
+        self.main_peaks_idxs = self.find_peaks_around(
                 self.y_log, 
-                peaks_idxs, 
+                peaks_corrected_idxs, 
                 width_region = self.width_region,
                 number_of_peaks=self.number_of_peaks
                 )
 
-        self.peaks_x = self.x.loc[self.peaks_idxs]
-        self.peaks_y_log = self.y_log.loc[self.peaks_idxs]
+        self.peaks_x = self.x.loc[self.main_peaks_idxs]
+        self.peaks_y_log = self.y_log.loc[self.main_peaks_idxs]
 
         # alpha = 2 tetta in rad
         self.alphas = self.peaks_x.to_numpy() / 180 * np.pi
@@ -103,9 +103,21 @@ class XDR:
             self.plot_data(axs[0])
 
             # find 20 peaks and thickness
-            peaks = self.find_peaks_around(self.y_log, peaks_idxs, width_region=self.width_region*2, number_of_peaks=NUM_PEAKS_SLOW) 
+            inner_area_idxs = self.x.index.isin(range(self.main_peaks_idxs[0], self.main_peaks_idxs[-1]))
+            # delete area between main peaks to not include in peak finding
+            # x = self.x[~(inner_area_idxs)]
+            # y_log = self.y_log[~(inner_area_idxs)]
+
+            peaks = self.find_peaks_around(self.y_log, peaks_corrected_idxs, width_region=self.width_region*3, number_of_peaks=NUM_PEAKS_SLOW) 
+
             x = self.x.loc[peaks]
             y_log = self.y_log.loc[peaks]
+            for peak in self.main_peaks_idxs:
+                try:
+                    x = x.drop(peak)
+                    y_log = y_log.drop(peak)
+                except:
+                    pass
             thickness = self.get_thickness(x) 
             axs[0].scatter(x, y_log, color='blue')
             axs[0].text(.05, .95, f'thickness={thickness:.5f} nm',
@@ -113,7 +125,23 @@ class XDR:
                 verticalalignment='top',
                 transform=axs[0].transAxes)
 
-            self.plot_closer_area(axs[1])
+            # functions for closer plot
+            x = self.x[inner_area_idxs]
+            y_log = self.y_log[inner_area_idxs]
+            peaks = scipy.signal.find_peaks(y_log)
+
+            peaks_x = x.iloc[peaks[0]]
+            peaks_y = y_log.iloc[peaks[0]]
+
+            thickness = XDR.get_thickness(peaks_x)
+
+            # plotting
+            axs[1].plot(x, y_log)
+            axs[1].scatter(peaks_x, peaks_y, color='r')
+            axs[1].text(.05, .95, f'thickness={thickness:.5f} nm',
+                    horizontalalignment='left',
+                    verticalalignment='top',
+                    transform=axs[1].transAxes)
             return fig
             
         elif data.method == '2t':
@@ -131,8 +159,8 @@ class XDR:
 
 
     def plot_rock(self, ax):
-        peak_x = self.x.loc[self.peaks_idxs].to_numpy()[0]
-        peak_y = self.y.loc[self.peaks_idxs].to_numpy()[0]
+        peak_x = self.x.loc[self.main_peaks_idxs].to_numpy()[0]
+        peak_y = self.y.loc[self.main_peaks_idxs].to_numpy()[0]
         peak_yhalf = peak_y / 2
         peak_yhalflog = np.log10(peak_yhalf)
         data = self.data.to_numpy()
@@ -188,8 +216,8 @@ class XDR:
 
 
     def plot_closer_area(self, ax):
-        x = self.x.loc[self.peaks_idxs[0]:self.peaks_idxs[-1]]
-        y_log = self.y_log.loc[self.peaks_idxs[0]:self.peaks_idxs[-1]]
+        x = self.x.loc[self.main_peaks_idxs[0]:self.main_peaks_idxs[-1]]
+        y_log = self.y_log.loc[self.main_peaks_idxs[0]:self.main_peaks_idxs[-1]]
         peaks = scipy.signal.find_peaks(y_log)
 
         peaks_x = x.iloc[peaks[0]]
@@ -251,12 +279,10 @@ class XDR:
             peaks_data['prominence'] = prominence[0]
 
             # number_of_peaks of most significant peaks
-            peaks_data_sorted = peaks_data.sort_values('prominence')
-            peaks_single_area = peaks_data_sorted.tail(number_of_peaks)
+            peaks_data = peaks_data.sort_values('prominence').tail(number_of_peaks)
+            # peaks_data = peaks_data.sort_values(1).tail(number_of_peaks)
 
-            idxs_peaks_single_area = np.sort(peaks_single_area.index.to_numpy())
-            single_area_peaks = idxs_peaks_single_area.tolist()
-            indexes_peaks_overall += single_area_peaks
+            indexes_peaks_overall += np.sort(peaks_data.index.to_numpy()).tolist()
         
         return indexes_peaks_overall
 
